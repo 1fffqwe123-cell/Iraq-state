@@ -1,0 +1,6 @@
+{
+  "name": "Iraq Real Estate",
+  "description": "A premium real estate portal for Iraq in Arabic and English (RTL by default) with an admin dashboard for full property and settings management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

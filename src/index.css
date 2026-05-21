@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --color-gold-50: #fdfbf7;
+  --color-gold-100: #fbf6eb;
+  --color-gold-200: #f3e6cd;
+  --color-gold-300: #e8cca5;
+  --color-gold-400: #d6a16b;
+  --color-gold-500: #b87a3b;
+  --color-gold-600: #9b5a26;
+  --color-gold-700: #7d421a;
+  --color-gold-800: #623013;
+  --color-gold-900: #49210c;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #faf9f6;
+  color: #1c1a17;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+}
+
+/* Transitions and custom animations */
+.transition-all-300 {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
