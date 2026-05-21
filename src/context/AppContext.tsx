@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Property, WebsiteSettings, ContactMessage } from '../types';
 
-// الرابط الأصلي الذي يحتوي على قاعدة البيانات الخاصة بك
+// هذا هو التعديل الأساسي: الرابط الذي ستتصل به جميع دوال الـ fetch
 const BASE_URL = "https://iraq-real-estate-690559924735.europe-west2.run.app";
 
 interface SystemActivity {
@@ -71,22 +71,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsLoading(true);
     setError(null);
     try {
-      const [resP, resS, resM, resMe, resA] = await Promise.all([
-        fetch(`${BASE_URL}/api/properties`),
-        fetch(`${BASE_URL}/api/settings`),
-        fetch(`${BASE_URL}/api/messages`),
-        fetch(`${BASE_URL}/api/media`),
-        fetch(`${BASE_URL}/api/activities`)
-      ]);
-      if (resP.ok) setProperties(await resP.json());
-      if (resS.ok) {
-        const setts = await resS.json();
-        setSettings(setts);
-        setCurrentLanguage(setts.defaultLanguage || 'ar');
-      }
-      if (resM.ok) setMessages(await resM.json());
-      if (resMe.ok) setMediaRepo(await resMe.json());
-      if (resA.ok) setActivities(await resA.json());
+      const respProp = await fetch(`${BASE_URL}/api/properties`);
+      if (!respProp.ok) throw new Error('Failed to retrieve properties');
+      setProperties(await respProp.json());
+
+      const respSettings = await fetch(`${BASE_URL}/api/settings`);
+      if (!respSettings.ok) throw new Error('Failed to retrieve settings');
+      const setts = await respSettings.json();
+      setSettings(setts);
+      setCurrentLanguage(setts.defaultLanguage || 'ar');
+
+      const respMsgs = await fetch(`${BASE_URL}/api/messages`);
+      if (respMsgs.ok) setMessages(await respMsgs.json());
+
+      const respMedia = await fetch(`${BASE_URL}/api/media`);
+      if (respMedia.ok) setMediaRepo(await respMedia.json());
+
+      const respActs = await fetch(`${BASE_URL}/api/activities`);
+      if (respActs.ok) setActivities(await respActs.json());
     } catch (err: any) {
       setError(err.message);
       showToast("خطأ في الاتصال بالسيرفر", "Connection error", "err");
@@ -100,15 +102,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (sessionStorage.getItem('iraq_estate_admin_session') === 'active') setIsAdminAuthenticated(true);
   }, []);
 
+  useEffect(() => {
+    const syncRouteFromLocation = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      const searchParams = new URLSearchParams(window.location.search);
+      const propId = searchParams.get('id');
+      const sessionActive = sessionStorage.getItem('iraq_estate_admin_session') === 'active';
+
+      if (hash) {
+        if (hash.startsWith('#/details/')) {
+          setCurrentRoute('details'); setSelectedPropertyId(hash.replace('#/details/', '')); return;
+        } else if (hash === '#/properties') { setCurrentRoute('properties'); return; }
+        else if (hash === '#/contact') { setCurrentRoute('contact'); return; }
+        else if (hash === '#/admin') { setCurrentRoute('admin'); return; }
+        else if (hash === '#/admin/dashboard') {
+          if (sessionActive || isAdminAuthenticated) setCurrentRoute('admin/dashboard');
+          else { setCurrentRoute('admin'); window.location.hash = '#/admin'; }
+          return;
+        }
+      }
+      if (path === '/admin') setCurrentRoute('admin');
+      else if (path === '/admin/dashboard' && (sessionActive || isAdminAuthenticated)) setCurrentRoute('admin/dashboard');
+      else if (path === '/properties') setCurrentRoute('properties');
+      else if (path === '/contact') setCurrentRoute('contact');
+      else if (path === '/details' && propId) { setCurrentRoute('details'); setSelectedPropertyId(propId); }
+      else setCurrentRoute('home');
+    };
+    window.addEventListener('popstate', syncRouteFromLocation);
+    window.addEventListener('hashchange', syncRouteFromLocation);
+    const timer = setInterval(syncRouteFromLocation, 1000);
+    syncRouteFromLocation();
+    return () => { window.removeEventListener('popstate', syncRouteFromLocation); window.removeEventListener('hashchange', syncRouteFromLocation); clearInterval(timer); };
+  }, [isAdminAuthenticated]);
+
   const showToast = (messageAr: string, messageEn: string, type: 'success' | 'err' = 'success') => {
     setToast({ messageAr, messageEn, type });
     setTimeout(() => setToast(null), 4500);
+  };
+
+  const navigate = (route: string, propertyId: string | null = null) => {
+    if ((route === 'admin/dashboard' || route.startsWith('admin/')) && !isAdminAuthenticated) {
+      setCurrentRoute('admin'); return;
+    }
+    window.history.pushState({}, '', route === 'details' ? `/details?id=${propertyId}` : `/${route}`);
+    window.location.hash = route === 'details' ? `#/details/${propertyId}` : `#/${route}`;
+    setCurrentRoute(route);
+    setSelectedPropertyId(propertyId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const logActivity = async (type: SystemActivity['type'], textAr: string, textEn: string) => {
+    try {
+      const resp = await fetch(`${BASE_URL}/api/activities`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, textAr, textEn })
+      });
+      if (resp.ok) setActivities(prev => [await resp.json(), ...prev].slice(0, 50));
+    } catch (err) { console.error(err); }
   };
 
   const login = (u: string, p: string) => {
     if (u === 'lloydlloyd' && p === '00885522') {
       setIsAdminAuthenticated(true);
       sessionStorage.setItem('iraq_estate_admin_session', 'active');
+      logActivity('settings', "تسجيل دخول", "Login");
       return true;
     }
     return false;
@@ -117,63 +174,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = () => { setIsAdminAuthenticated(false); sessionStorage.removeItem('iraq_estate_admin_session'); navigate('home'); };
 
   const addProperty = async (data: any) => {
-    const res = await fetch(`${BASE_URL}/api/properties`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-    });
-    const saved = await res.json();
-    setProperties(prev => [saved, ...prev]);
-    return saved.id;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/properties`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+      });
+      const saved = await res.json();
+      setProperties(prev => [saved, ...prev]);
+      showToast("تمت الإضافة", "Added", "success");
+      return saved.id;
+    } finally { setIsLoading(false); }
   };
 
   const updateProperty = async (id: string, data: any) => {
-    const res = await fetch(`${BASE_URL}/api/properties/${id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
-    });
-    const updated = await res.json();
-    setProperties(prev => prev.map(p => p.id === id ? updated : p));
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/properties/${id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+      });
+      const updated = await res.json();
+      setProperties(prev => prev.map(p => p.id === id ? updated : p));
+      showToast("تم التحديث", "Updated", "success");
+    } finally { setIsLoading(false); }
   };
 
   const deleteProperty = async (id: string) => {
-    await fetch(`${BASE_URL}/api/properties/${id}`, { method: 'DELETE' });
-    setProperties(prev => prev.filter(p => p.id !== id));
+    setIsLoading(true);
+    try {
+      await fetch(`${BASE_URL}/api/properties/${id}`, { method: 'DELETE' });
+      setProperties(prev => prev.filter(p => p.id !== id));
+      showToast("تم الحذف", "Deleted", "success");
+    } finally { setIsLoading(false); }
   };
 
   const updateSettings = async (s: any) => {
-    const res = await fetch(`${BASE_URL}/api/settings`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s)
-    });
-    setSettings(await res.json());
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${BASE_URL}/api/settings`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s)
+      });
+      setSettings(await res.json());
+      showToast("تم حفظ الإعدادات", "Settings saved", "success");
+    } finally { setIsLoading(false); }
   };
 
   const addToMediaRepo = async (url: string) => {
-    const res = await fetch(`${BASE_URL}/api/media`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
-    });
-    setMediaRepo(await res.json());
+    try {
+      const res = await fetch(`${BASE_URL}/api/media`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
+      });
+      setMediaRepo(await res.json());
+    } catch (err) { console.error(err); }
   };
 
   const removeFromMediaRepo = async (url: string) => {
-    const res = await fetch(`${BASE_URL}/api/media`, {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
-    });
-    setMediaRepo(await res.json());
+    try {
+      const res = await fetch(`${BASE_URL}/api/media`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
+      });
+      setMediaRepo(await res.json());
+    } catch (err) { console.error(err); }
   };
 
   const submitMessage = async (msg: any) => {
-    await fetch(`${BASE_URL}/api/messages`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg)
-    });
+    setIsLoading(true);
+    try {
+      await fetch(`${BASE_URL}/api/messages`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg)
+      });
+      showToast("تم الإرسال", "Sent", "success");
+    } finally { setIsLoading(false); }
   };
 
   const clearMessages = async () => {
-    await fetch(`${BASE_URL}/api/messages`, { method: 'DELETE' });
-    setMessages([]);
-  };
-
-  const navigate = (route: string, propertyId?: string | null) => {
-    setCurrentRoute(route);
-    if (propertyId) setSelectedPropertyId(propertyId);
-    window.location.hash = `#/${route}`;
+    setIsLoading(true);
+    try {
+      await fetch(`${BASE_URL}/api/messages`, { method: 'DELETE' });
+      setMessages([]);
+    } finally { setIsLoading(false); }
   };
 
   return (
@@ -187,4 +265,4 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
 export const useApp = () => useContext(AppContext)!;
-    
+            
