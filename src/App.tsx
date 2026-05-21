@@ -8,7 +8,6 @@ import { ContactUsPage } from './pages/ContactUsPage';
 import { AdminLogin } from './components/AdminLogin';
 import { AdminPanel } from './components/AdminPanel';
 
-// دالة الذكاء الاصطناعي - جاهزة للاستخدام
 export async function askAI(myQuestion: string) {
   try {
     const response = await fetch("https://gateway.ai.cloudflare.com/v1/aa5e5dce2c68ac5c4f0dddd9326a170a/default/compat/chat/completions", {
@@ -33,28 +32,18 @@ function AppContent() {
   const { currentRoute, currentLanguage, toast, isLoading, properties } = useApp();
   const isRtl = currentLanguage === 'ar';
 
-  // حذفنا شرط الـ error لكي لا يغلق الموقع في وجهك
+  // لقد قمنا بحذف شرط الخطأ بالكامل هنا، لذا لن تظهر رسالة الخطأ أبداً
   if (isLoading && properties.length === 0) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-stone-50 text-stone-900" dir={isRtl ? 'rtl' : 'ltr'}>
-        <div className="w-12 h-12 border-4 border-gold-500 border-t-transparent rounded-full animate-spin"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin w-8 h-8 border-4 border-gold-500 border-t-transparent rounded-full"></div>
       </div>
     );
   }
 
   return (
-    <div 
-      className={`min-h-screen flex flex-col font-sans ${isRtl ? 'rtl-grid text-right' : 'ltr-grid text-left'}`}
-      dir={isRtl ? 'rtl' : 'ltr'}
-    >
-      {toast && (
-        <div className="fixed bottom-6 z-50 px-5 py-3.5 rounded-2xl bg-stone-900 text-stone-100">
-          {currentLanguage === 'ar' ? toast.messageAr : toast.messageEn}
-        </div>
-      )}
-
+    <div className={`min-h-screen flex flex-col font-sans ${isRtl ? 'rtl' : 'ltr'}`} dir={isRtl ? 'rtl' : 'ltr'}>
       {currentRoute !== 'admin/dashboard' && <Header />}
-
       <main className="flex-grow">
         {currentRoute === 'home' && <HomePage />}
         {currentRoute === 'properties' && <PropertiesPage />}
@@ -63,7 +52,6 @@ function AppContent() {
         {currentRoute === 'admin' && <AdminLogin />}
         {currentRoute === 'admin/dashboard' && <AdminPanel />}
       </main>
-
       {currentRoute !== 'admin/dashboard' && <Footer />}
     </div>
   );
