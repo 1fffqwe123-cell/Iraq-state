@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Property, WebsiteSettings, ContactMessage } from '../types';
 
+// الرابط المعتمد للسيرفر الخاص بك
 const BASE_URL = "https://iraq-real-estate-690559924735.europe-west2.run.app";
 
 interface SystemActivity {
@@ -68,26 +69,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshData = async () => {
     setIsLoading(true);
-    setError(null);
     try {
-      const [resP, resS, resM, resMe, resA] = await Promise.all([
-        fetch(`${BASE_URL}/api/properties`),
-        fetch(`${BASE_URL}/api/settings`),
-        fetch(`${BASE_URL}/api/messages`),
-        fetch(`${BASE_URL}/api/media`),
-        fetch(`${BASE_URL}/api/activities`)
-      ]);
-      if (resP.ok) setProperties(await resP.json());
-      if (resS.ok) {
-        const setts = await resS.json();
-        setSettings(setts);
-        setCurrentLanguage(setts.defaultLanguage || 'ar');
-      }
-      if (resM.ok) setMessages(await resM.json());
-      if (resMe.ok) setMediaRepo(await resMe.json());
-      if (resA.ok) setActivities(await resA.json());
-    } catch (err: any) {
-      setError(err.message);
+      const respProp = await fetch(`${BASE_URL}/api/properties`);
+      const props = await respProp.json();
+      setProperties(props);
+
+      const respSettings = await fetch(`${BASE_URL}/api/settings`);
+      const setts = await respSettings.json();
+      setSettings(setts);
+      
+      const respMsgs = await fetch(`${BASE_URL}/api/messages`);
+      if (respMsgs.ok) setMessages(await respMsgs.json());
+
+      const respMedia = await fetch(`${BASE_URL}/api/media`);
+      if (respMedia.ok) setMediaRepo(await respMedia.json());
+
+      const respActs = await fetch(`${BASE_URL}/api/activities`);
+      if (respActs.ok) setActivities(await respActs.json());
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsLoading(false);
     }
@@ -98,15 +98,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (sessionStorage.getItem('iraq_estate_admin_session') === 'active') setIsAdminAuthenticated(true);
   }, []);
 
+  // إضافة منطق الـ Routing كما كان في ملفك الأصلي
+  useEffect(() => {
+    const syncRouteFromLocation = () => {
+      const path = window.location.pathname;
+      const hash = window.location.hash;
+      if (hash.startsWith('#/details/')) {
+        setCurrentRoute('details');
+        setSelectedPropertyId(hash.replace('#/details/', ''));
+      } else if (hash === '#/admin/dashboard') {
+        setCurrentRoute('admin/dashboard');
+      } else if (path === '/admin') {
+        setCurrentRoute('admin');
+      } else {
+        setCurrentRoute('home');
+      }
+    };
+    window.addEventListener('hashchange', syncRouteFromLocation);
+    syncRouteFromLocation();
+    return () => window.removeEventListener('hashchange', syncRouteFromLocation);
+  }, []);
+
   const showToast = (messageAr: string, messageEn: string, type: 'success' | 'err' = 'success') => {
     setToast({ messageAr, messageEn, type });
     setTimeout(() => setToast(null), 4500);
   };
 
-  const navigate = (route: string, propertyId?: string | null) => {
+  const navigate = (route: string, propertyId: string | null = null) => {
+    window.location.hash = propertyId ? `#/details/${propertyId}` : `#/${route}`;
     setCurrentRoute(route);
-    if (propertyId) setSelectedPropertyId(propertyId);
-    window.location.hash = `#/${route}`;
+    setSelectedPropertyId(propertyId);
   };
 
   const logActivity = async (type: SystemActivity['type'], textAr: string, textEn: string) => {
@@ -121,8 +142,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (err) { console.error(err); }
   };
 
-  const login = (u: string, p: string) => {
-    if (u === 'lloydlloyd' && p === '00885522') {
+  const login = (username: string, password: string): boolean => {
+    if (username === 'lloydlloyd' && password === '00885522') {
       setIsAdminAuthenticated(true);
       sessionStorage.setItem('iraq_estate_admin_session', 'active');
       logActivity('settings', "تسجيل دخول", "Login");
@@ -131,58 +152,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   };
 
-  const logout = () => { setIsAdminAuthenticated(false); sessionStorage.removeItem('iraq_estate_admin_session'); navigate('home'); };
+  const logout = () => {
+    setIsAdminAuthenticated(false);
+    sessionStorage.removeItem('iraq_estate_admin_session');
+    navigate('home');
+  };
 
-  const addProperty = async (data: any) => {
-    const res = await fetch(`${BASE_URL}/api/properties`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+  const addProperty = async (propertyData: Omit<Property, 'id' | 'createdAt'>): Promise<string> => {
+    const resp = await fetch(`${BASE_URL}/api/properties`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(propertyData)
     });
-    const saved = await res.json();
+    const saved = await resp.json();
     setProperties(prev => [saved, ...prev]);
     return saved.id;
   };
 
-  const updateProperty = async (id: string, data: any) => {
-    const res = await fetch(`${BASE_URL}/api/properties/${id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+  const updateProperty = async (id: string, updatedFields: Partial<Property>): Promise<void> => {
+    const resp = await fetch(`${BASE_URL}/api/properties/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedFields)
     });
-    const updated = await res.json();
-    setProperties(prev => prev.map(p => p.id === id ? updated : p));
+    const updatedItem = await resp.json();
+    setProperties(prev => prev.map(p => p.id === id ? updatedItem : p));
   };
 
-  const deleteProperty = async (id: string) => {
+  const deleteProperty = async (id: string): Promise<void> => {
     await fetch(`${BASE_URL}/api/properties/${id}`, { method: 'DELETE' });
     setProperties(prev => prev.filter(p => p.id !== id));
   };
 
-  const updateSettings = async (s: any) => {
-    const res = await fetch(`${BASE_URL}/api/settings`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s)
+  const updateSettings = async (updatedSettings: WebsiteSettings): Promise<void> => {
+    const resp = await fetch(`${BASE_URL}/api/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedSettings)
     });
-    setSettings(await res.json());
+    setSettings(await resp.json());
   };
 
-  const addToMediaRepo = async (url: string) => {
-    const res = await fetch(`${BASE_URL}/api/media`, {
+  const addToMediaRepo = async (url: string): Promise<void> => {
+    const resp = await fetch(`${BASE_URL}/api/media`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
     });
-    setMediaRepo(await res.json());
+    setMediaRepo(await resp.json());
   };
 
-  const removeFromMediaRepo = async (url: string) => {
-    const res = await fetch(`${BASE_URL}/api/media`, {
+  const removeFromMediaRepo = async (url: string): Promise<void> => {
+    const resp = await fetch(`${BASE_URL}/api/media`, {
       method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
     });
-    setMediaRepo(await res.json());
+    setMediaRepo(await resp.json());
   };
 
-  const submitMessage = async (msg: any) => {
+  const submitMessage = async (msgData: Omit<ContactMessage, 'id' | 'createdAt'>): Promise<void> => {
     await fetch(`${BASE_URL}/api/messages`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg)
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msgData)
     });
   };
 
-  const clearMessages = async () => {
+  const clearMessages = async (): Promise<void> => {
     await fetch(`${BASE_URL}/api/messages`, { method: 'DELETE' });
     setMessages([]);
   };
@@ -198,4 +223,4 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
 export const useApp = () => useContext(AppContext)!;
-  
+    
