@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Property, WebsiteSettings, ContactMessage } from '../types';
 
-// الرابط الأصلي الذي يحتوي على قاعدة البيانات
+// الرابط الأصلي الذي يحتوي على قاعدة البيانات الخاصة بك
 const BASE_URL = "https://iraq-real-estate-690559924735.europe-west2.run.app";
 
 interface SystemActivity {
@@ -69,37 +69,117 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshData = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      const [resP, resS, resM] = await Promise.all([
+      const [resP, resS, resM, resMe, resA] = await Promise.all([
         fetch(`${BASE_URL}/api/properties`),
         fetch(`${BASE_URL}/api/settings`),
-        fetch(`${BASE_URL}/api/messages`)
+        fetch(`${BASE_URL}/api/messages`),
+        fetch(`${BASE_URL}/api/media`),
+        fetch(`${BASE_URL}/api/activities`)
       ]);
-      if(resP.ok) setProperties(await resP.json());
-      if(resS.ok) {
+      if (resP.ok) setProperties(await resP.json());
+      if (resS.ok) {
         const setts = await resS.json();
         setSettings(setts);
         setCurrentLanguage(setts.defaultLanguage || 'ar');
       }
-      if(resM.ok) setMessages(await resM.json());
-    } catch (err) {
-      setError('فشل الاتصال بالسيرفر');
+      if (resM.ok) setMessages(await resM.json());
+      if (resMe.ok) setMediaRepo(await resMe.json());
+      if (resA.ok) setActivities(await resA.json());
+    } catch (err: any) {
+      setError(err.message);
+      showToast("خطأ في الاتصال بالسيرفر", "Connection error", "err");
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => { refreshData(); }, []);
+  useEffect(() => {
+    refreshData();
+    if (sessionStorage.getItem('iraq_estate_admin_session') === 'active') setIsAdminAuthenticated(true);
+  }, []);
 
-  // بقية الدوال (navigate, login, logout, addProperty, إلخ) تعمل بنفس منطق استخدام BASE_URL
-  // (تم الاختصار هنا للتركيز على الاتصال، يمكنك إكمال باقي الدوال بنفس النمط)
+  const showToast = (messageAr: string, messageEn: string, type: 'success' | 'err' = 'success') => {
+    setToast({ messageAr, messageEn, type });
+    setTimeout(() => setToast(null), 4500);
+  };
+
+  const login = (u: string, p: string) => {
+    if (u === 'lloydlloyd' && p === '00885522') {
+      setIsAdminAuthenticated(true);
+      sessionStorage.setItem('iraq_estate_admin_session', 'active');
+      return true;
+    }
+    return false;
+  };
+
+  const logout = () => { setIsAdminAuthenticated(false); sessionStorage.removeItem('iraq_estate_admin_session'); navigate('home'); };
+
+  const addProperty = async (data: any) => {
+    const res = await fetch(`${BASE_URL}/api/properties`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    });
+    const saved = await res.json();
+    setProperties(prev => [saved, ...prev]);
+    return saved.id;
+  };
+
+  const updateProperty = async (id: string, data: any) => {
+    const res = await fetch(`${BASE_URL}/api/properties/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    });
+    const updated = await res.json();
+    setProperties(prev => prev.map(p => p.id === id ? updated : p));
+  };
+
+  const deleteProperty = async (id: string) => {
+    await fetch(`${BASE_URL}/api/properties/${id}`, { method: 'DELETE' });
+    setProperties(prev => prev.filter(p => p.id !== id));
+  };
+
+  const updateSettings = async (s: any) => {
+    const res = await fetch(`${BASE_URL}/api/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s)
+    });
+    setSettings(await res.json());
+  };
+
+  const addToMediaRepo = async (url: string) => {
+    const res = await fetch(`${BASE_URL}/api/media`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
+    });
+    setMediaRepo(await res.json());
+  };
+
+  const removeFromMediaRepo = async (url: string) => {
+    const res = await fetch(`${BASE_URL}/api/media`, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url })
+    });
+    setMediaRepo(await res.json());
+  };
+
+  const submitMessage = async (msg: any) => {
+    await fetch(`${BASE_URL}/api/messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg)
+    });
+  };
+
+  const clearMessages = async () => {
+    await fetch(`${BASE_URL}/api/messages`, { method: 'DELETE' });
+    setMessages([]);
+  };
+
+  const navigate = (route: string, propertyId?: string | null) => {
+    setCurrentRoute(route);
+    if (propertyId) setSelectedPropertyId(propertyId);
+    window.location.hash = `#/${route}`;
+  };
 
   return (
     <AppContext.Provider value={{
       properties, settings, messages, activities, currentLanguage, isAdminAuthenticated, currentRoute, selectedPropertyId, adminTab, editingPropertyId, mediaRepo, toast, isLoading, error, refreshData,
-      navigate: () => {}, setLanguage: () => {}, setAdminTab: () => {}, setEditingPropertyId: () => {}, login: () => false, logout: () => {},
-      addProperty: async () => "", updateProperty: async () => {}, deleteProperty: async () => {}, updateSettings: async () => {},
-      addToMediaRepo: async () => {}, removeFromMediaRepo: async () => {}, submitMessage: async () => {}, clearMessages: async () => {}, showToast: () => {}
+      navigate, setLanguage: setCurrentLanguage, setAdminTab, setEditingPropertyId, login, logout, addProperty, updateProperty, deleteProperty, updateSettings, addToMediaRepo, removeFromMediaRepo, submitMessage, clearMessages, showToast
     }}>
       {children}
     </AppContext.Provider>
@@ -107,3 +187,4 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 };
 
 export const useApp = () => useContext(AppContext)!;
+    
